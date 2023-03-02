@@ -7,6 +7,7 @@ import (
 	"plugin"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lainio/err2"
 	"github.com/lainio/err2/try"
@@ -21,25 +22,34 @@ type Wage struct {
 	fsw    *watcher.Watcher
 
 	rwl  *sync.RWMutex
-	pkgs map[string]string
+	pkgs map[string]*pkg
+}
+
+type pkg struct {
+	path     string
+	compiled time.Time
+	changed  time.Time
+	locker   sync.Locker
 }
 
 func NewWage(root string) *Wage {
-	pwd := try.To1(os.Getwd())
-	root = filepath.Join(pwd, root)
+	if !filepath.IsAbs(root) {
+		pwd := try.To1(os.Getwd())
+		root = filepath.Join(pwd, root)
+	}
 	w := &Wage{
 		Root: root,
 
 		rwl:  &sync.RWMutex{},
-		pkgs: map[string]string{},
+		pkgs: map[string]*pkg{},
 	}
 	w.mod = try.To1(CollectGoModInfo(w.Root))
+	w.tmpdir = filepath.Join(w.Root, ".wage-tmp")
 	return w
 }
 
 func (w *Wage) Start() (err error) {
 	defer err2.Handle(&err)
-	w.tmpdir = filepath.Join(w.Root, ".wage-tmp")
 	try.To(os.MkdirAll(w.tmpdir, os.ModePerm))
 	try.To(w.WatchFs())
 	return

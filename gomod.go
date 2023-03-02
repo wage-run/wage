@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/lainio/err2"
 	"github.com/lainio/err2/try"
@@ -42,4 +43,8 @@ func CollectGoModInfo(workdir string) (info GoModInfo, err error) {
 		info.ModulePath = output.Module.Path
 	}
 	return
+}
+
+func (mod GoModInfo) Dir(pkg string) string {
+	return filepath.Join(mod.RootDir, strings.TrimPrefix(pkg, mod.ModulePath))
 }
