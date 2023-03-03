@@ -1,5 +1,11 @@
 package main
 
-import main "{{.pkg}}"
+import (
+	core "{{.pkg}}"
 
-var Export = main.Export
+	"github.com/wage-run/wage"
+)
+
+func Export() wage.Module {
+	return core.Export()
+}
