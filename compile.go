@@ -31,26 +31,14 @@ func (w *Wage) Compile(pkg *pkg) (dll string, err error) {
 	gofile = filepath.Join(w.tmpdir, gofile)
 	dll = strings.TrimSuffix(gofile, ".go") + ".so"
 
-	pkg.locker.Lock()
-	defer pkg.locker.Unlock()
-
-	if pkg.compiled.Sub(pkg.changed) >= 0 {
+	if !needRecompile(pkg) {
 		return
 	}
 	pkg.compiled = time.Now()
 
-	oldFilesMatch := strings.ReplaceAll(pkg.path, "/", "-") + "-*"
-	oldFilesMatch = filepath.Join(w.tmpdir, oldFilesMatch)
-	oldFiles := try.To1(filepath.Glob(oldFilesMatch))
-	go func() {
-		for _, f := range oldFiles {
-			go os.Remove(f)
-		}
-	}()
-
 	f := try.To1(os.OpenFile(gofile, os.O_CREATE|os.O_WRONLY, os.ModePerm))
-	defer f.Close()
-	mainTpl.Execute(f, map[string]any{"pkg": pkg.path})
+	try.To(mainTpl.Execute(f, map[string]any{"pkg": pkg.path}))
+	f.Close()
 
 	cmd := exec.Command("go", "build", "-buildmode=plugin", gofile)
 	cmd.Stderr = os.Stderr
@@ -81,4 +69,11 @@ func (w *Wage) getPkg(pkgPath string) (p *pkg) {
 	}
 
 	return
+}
+
+func needRecompile(pkg *pkg) bool {
+	pkg.locker.Lock()
+	defer pkg.locker.Unlock()
+	t := pkg.compiled.Sub(pkg.changed)
+	return t < 0
 }

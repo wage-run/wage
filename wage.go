@@ -48,6 +48,7 @@ func NewWage(root string) *Wage {
 
 func (w *Wage) Start() (err error) {
 	defer err2.Handle(&err)
+	os.RemoveAll(w.tmpdir)
 	try.To(os.MkdirAll(w.tmpdir, os.ModePerm))
 	try.To(w.WatchFs())
 	return

@@ -60,9 +60,13 @@ func (w *Wage) handleFileChange(e watcher.Event) (err error) {
 	}
 
 	dir := filepath.Dir(e.Path)
-	pkg := w.getPkg(w.FindPkg(dir))
+	pkgPath := w.FindPkg(dir)
 
-	if pkg == nil {
+	w.pkgsL.RLock()
+	pkg, ok := w.pkgs[pkgPath]
+	w.pkgsL.RUnlock()
+
+	if !ok {
 		return
 	}
 

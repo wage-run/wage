@@ -8,9 +8,11 @@ import (
 )
 
 func TestCompile(t *testing.T) {
+	resetTestdata()
+	defer resetTestdata()
 	w := NewWage("testdata")
 	try.To(w.Start())
-	p := w.getPkg(w.FindPkg("."))
+	p := w.getPkg(".")
 	try.To1(w.Compile(p))
 	time.Sleep(time.Second)
 }

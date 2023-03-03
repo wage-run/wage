@@ -11,6 +11,7 @@ import (
 
 func TestFsWatch(t *testing.T) {
 	resetTestdata()
+	defer resetTestdata()
 	w := NewWage("testdata")
 	w.Start()
 	pkg := w.getPkg(".")
@@ -26,5 +27,5 @@ func TestFsWatch(t *testing.T) {
 
 func resetTestdata() {
 	cmd := exec.Command("git", "checkout", "testdata")
-	cmd.Run()
+	try.To(cmd.Run())
 }
