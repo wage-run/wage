@@ -21,8 +21,8 @@ type Wage struct {
 	mod    GoModInfo
 	fsw    *watcher.Watcher
 
-	rwl  *sync.RWMutex
-	pkgs map[string]*pkg
+	pkgsL *sync.RWMutex
+	pkgs  map[string]*pkg
 }
 
 type pkg struct {
@@ -33,15 +33,13 @@ type pkg struct {
 }
 
 func NewWage(root string) *Wage {
-	if !filepath.IsAbs(root) {
-		pwd := try.To1(os.Getwd())
-		root = filepath.Join(pwd, root)
-	}
+	root = try.To1(filepath.Abs(root))
+
 	w := &Wage{
 		Root: root,
 
-		rwl:  &sync.RWMutex{},
-		pkgs: map[string]*pkg{},
+		pkgsL: &sync.RWMutex{},
+		pkgs:  map[string]*pkg{},
 	}
 	w.mod = try.To1(CollectGoModInfo(w.Root))
 	w.tmpdir = filepath.Join(w.Root, ".wage-tmp")
@@ -67,28 +65,26 @@ var ErrPkgNoExport = fmt.Errorf("pkg no Export func")
 
 func (w *Wage) Load(path string) (m Module, err error) {
 	defer err2.Handle(&err)
-	pkg := try.To1(w.FindPkg(path))
+	pkg := w.getPkg(path)
 	dll := try.To1(w.Compile(pkg))
 	p := try.To1(plugin.Open(dll))
 	export, ok := try.To1(p.Lookup("Export")).(Export)
 	if !ok {
-		err = fmt.Errorf("%w. %s", ErrPkgNoExport, pkg)
+		err = fmt.Errorf("%w. %s", ErrPkgNoExport, pkg.path)
 		return
 	}
 	m = export()
 	return
 }
 
-func (w *Wage) FindPkg(path string) (string, error) {
-	d := filepath.Join(w.Root, path)
-	finfo, err := os.Stat(d)
-	if err != nil {
-		return "", err
+func (w *Wage) FindPkg(dir string) string {
+	if strings.HasPrefix(dir, w.mod.ModulePath) {
+		return dir
 	}
-	if !finfo.IsDir() {
-		d = filepath.Dir(d)
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(w.Root, dir)
 	}
-	d = strings.TrimPrefix(d, w.mod.RootDir)
-	d = filepath.Join(w.mod.ModulePath, d)
-	return d, nil
+	dir = strings.TrimPrefix(dir, w.mod.RootDir)
+	dir = filepath.Join(w.mod.ModulePath, dir)
+	return dir
 }

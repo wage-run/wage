@@ -20,27 +20,39 @@ var mainTplStr string
 
 var mainTpl = template.Must(template.New("tmp-main").Parse(mainTplStr))
 
-func (w *Wage) Compile(pkgPath string) (dll string, err error) {
+func (w *Wage) Compile(pkg *pkg) (dll string, err error) {
 	defer err2.Handle(&err)
-	pkg := w.getPkg(pkgPath)
 	if pkg == nil {
 		return "", os.ErrNotExist
 	}
-	defer func() { dll = strings.TrimSuffix(dll, ".go") + ".so" }()
-	dll = strings.ReplaceAll(pkg.path, "/", "-") + fmt.Sprintf("-%d.go", pkg.changed.Unix())
-	dll = filepath.Join(w.tmpdir, dll)
-	if !pkg.compiled.IsZero() {
-		return
-	}
+
+	var gofile string
+	gofile = strings.ReplaceAll(pkg.path, "/", "-") + fmt.Sprintf("-%d.go", pkg.changed.Unix())
+	gofile = filepath.Join(w.tmpdir, gofile)
+	dll = strings.TrimSuffix(gofile, ".go") + ".so"
 
 	pkg.locker.Lock()
 	defer pkg.locker.Unlock()
 
-	f := try.To1(os.OpenFile(dll, os.O_CREATE|os.O_WRONLY, os.ModePerm))
-	defer f.Close()
-	mainTpl.Execute(f, map[string]any{"pkg": pkgPath})
+	if pkg.compiled.Sub(pkg.changed) >= 0 {
+		return
+	}
+	pkg.compiled = time.Now()
 
-	cmd := exec.Command("go", "build", "-buildmode=plugin", dll)
+	oldFilesMatch := strings.ReplaceAll(pkg.path, "/", "-") + "-*"
+	oldFilesMatch = filepath.Join(w.tmpdir, oldFilesMatch)
+	oldFiles := try.To1(filepath.Glob(oldFilesMatch))
+	go func() {
+		for _, f := range oldFiles {
+			go os.Remove(f)
+		}
+	}()
+
+	f := try.To1(os.OpenFile(gofile, os.O_CREATE|os.O_WRONLY, os.ModePerm))
+	defer f.Close()
+	mainTpl.Execute(f, map[string]any{"pkg": pkg.path})
+
+	cmd := exec.Command("go", "build", "-buildmode=plugin", gofile)
 	cmd.Stderr = os.Stderr
 	cmd.Dir = w.tmpdir
 	try.To(cmd.Run())
@@ -49,26 +61,23 @@ func (w *Wage) Compile(pkgPath string) (dll string, err error) {
 }
 
 func (w *Wage) getPkg(pkgPath string) (p *pkg) {
-	w.rwl.Lock()
-	defer w.rwl.Unlock()
-
+	pkgPath = w.FindPkg(pkgPath)
+	w.pkgsL.RLock()
 	p, ok := w.pkgs[pkgPath]
+	w.pkgsL.RUnlock()
 	if !ok {
-		pkgFsPath := w.mod.Dir(pkgPath)
-		stat, err := os.Stat(pkgFsPath)
-		if err != nil {
-			return nil
-		}
+		w.pkgsL.Lock()
+		defer w.pkgsL.Unlock()
+
 		p = &pkg{
 			path:    pkgPath,
-			changed: stat.ModTime(),
+			changed: time.Now(),
 			locker:  &sync.Mutex{},
 		}
-		return
-	}
 
-	if p.changed.Sub(p.compiled) >= 0 {
-		p.compiled = time.Time{}
+		w.pkgs[pkgPath] = p
+
+		return
 	}
 
 	return
